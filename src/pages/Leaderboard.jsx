@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getLeaderboard } from "../utils/ranking";
+import { motion } from "framer-motion";
 
 const Leaderboard = () => {
   const [players, setPlayers] = useState([]);
@@ -19,66 +20,71 @@ const Leaderboard = () => {
   const medals = ["🥇", "🥈", "🥉"];
 
   return (
-    <div style={{ color: "white", textAlign: "center", padding: "20px" }}>
-      <h1>🏆 Classement</h1>
-
-      {loading ? (
-        <p>Chargement...</p>
-      ) : (
-        <div style={{ display: "inline-block", textAlign: "left", minWidth: "400px" }}>
-          {/* En-tête */}
-          <div style={{
-            display: "flex", justifyContent: "space-between",
-            padding: "8px 16px", color: "#aaa", fontSize: "14px"
-          }}>
-            <span>Rang</span>
-            <span>Joueur</span>
-            <span>Victoires</span>
-            <span>Parties</span>
-          </div>
-
-          {/* Liste des joueurs */}
-          {players.map((player, index) => (
-            <div
-              key={player.id}
-              style={{
-                display: "flex", justifyContent: "space-between",
-                alignItems: "center", gap: "20px",
-                padding: "10px 16px", margin: "4px 0",
-                background: index < 3 ? "#2d3a5a" : "#1a1a2e",
-                borderRadius: "8px",
-                border: index === 0 ? "1px solid gold" :
-                        index === 1 ? "1px solid silver" :
-                        index === 2 ? "1px solid #cd7f32" : "none",
-              }}
-            >
-              <span style={{ fontSize: "20px", minWidth: "30px" }}>
-                {medals[index] || `#${index + 1}`}
-              </span>
-              <span style={{ flex: 1, marginLeft: "10px" }}>{player.pseudo}</span>
-              <span style={{ color: "#4caf50", minWidth: "60px", textAlign: "center" }}>
-                {player.victories} 🏆
-              </span>
-              <span style={{ color: "#aaa", minWidth: "60px", textAlign: "center" }}>
-                {player.totalGames} 🎮
-              </span>
-            </div>
-          ))}
-
-          {players.length === 0 && (
-            <p style={{ textAlign: "center", color: "#aaa" }}>
-              Aucun joueur pour l'instant. Sois le premier ! 🎲
-            </p>
-          )}
-        </div>
-      )}
-
-      <button
-        onClick={() => navigate("/")}
-        style={{ marginTop: "30px", padding: "10px 30px", cursor: "pointer", fontSize: "16px" }}
+    <div style={{ minHeight: "100vh", padding: "40px 20px", maxWidth: "600px", margin: "0 auto" }}>
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
       >
-        🏠 Retour au lobby
-      </button>
+        <h1 style={{ textAlign: "center", fontSize: "36px", fontWeight: 900, marginBottom: "8px" }}>
+          🏆 Classement
+        </h1>
+        <p style={{ textAlign: "center", color: "rgba(255,255,255,0.4)", marginBottom: "30px" }}>
+          Les meilleurs joueurs
+        </p>
+
+        {loading ? (
+          <p style={{ textAlign: "center", color: "rgba(255,255,255,0.5)" }}>Chargement...</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {players.map((player, index) => (
+              <motion.div
+                key={player.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.05 }}
+                style={{
+                  display: "flex", alignItems: "center", gap: "16px",
+                  padding: "14px 20px",
+                  background: index === 0 ? "rgba(255,215,0,0.1)" :
+                               index === 1 ? "rgba(192,192,192,0.1)" :
+                               index === 2 ? "rgba(205,127,50,0.1)" :
+                               "rgba(255,255,255,0.05)",
+                  borderRadius: "14px",
+                  border: index === 0 ? "1px solid rgba(255,215,0,0.3)" :
+                          index === 1 ? "1px solid rgba(192,192,192,0.3)" :
+                          index === 2 ? "1px solid rgba(205,127,50,0.3)" :
+                          "1px solid rgba(255,255,255,0.05)",
+                }}
+              >
+                <span style={{ fontSize: "24px", minWidth: "36px", textAlign: "center" }}>
+                  {medals[index] || `#${index + 1}`}
+                </span>
+                <span style={{ flex: 1, fontSize: "18px", fontWeight: 700 }}>{player.pseudo}</span>
+                <span style={{ color: "#4caf50", fontWeight: 700 }}>{player.victories} 🏆</span>
+                <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "14px" }}>{player.totalGames} parties</span>
+              </motion.div>
+            ))}
+
+            {players.length === 0 && (
+              <p style={{ textAlign: "center", color: "rgba(255,255,255,0.4)", marginTop: "40px" }}>
+                Aucun joueur pour l'instant. Sois le premier ! 🎲
+              </p>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={() => navigate("/")}
+          style={{
+            marginTop: "30px", width: "100%", padding: "14px",
+            background: "rgba(255,255,255,0.08)",
+            color: "white", fontSize: "16px",
+          }}
+        >
+          🏠 Retour au lobby
+        </button>
+      </motion.div>
     </div>
   );
 };
