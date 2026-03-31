@@ -7,6 +7,9 @@ import { checkAndAwardBadges } from "../utils/badges";
 import BadgeNotification from "../components/BadgeNotification";
 import { motion, AnimatePresence } from "framer-motion";
 import { updatePlayerStats } from "../utils/ranking";
+import { playVictory, playDefeat, playYahtzee } from "../utils/sounds";
+import { launchVictoryConfetti, launchYahtzeeConfetti } from "../utils/confetti";
+import { getTheme, THEMES } from "../utils/themes";
 
 const TOTAL_CATEGORIES = Object.keys(CATEGORY_NAMES).length;
 const GRIDS = ["grid1", "grid2", "grid3"];
@@ -36,6 +39,7 @@ const Die = ({ value, kept, onClick, isMyTurn, rolling }) => (
       boxShadow: kept ? "0 0 16px rgba(240,192,64,0.6)" : "0 3px 8px rgba(0,0,0,0.25)",
       display: "grid", gridTemplateRows: "repeat(3, 1fr)",
       padding: "8px", gap: "2px",
+      transition: "transform 0.1s ease",
     }}
   >
     {diceFaces[value - 1].map((row, rowIndex) => (
@@ -101,6 +105,12 @@ const Game = () => {
       const winnerData = scores.reduce((a, b) => (a.total > b.total ? a : b));
       const loserData = scores.reduce((a, b) => (a.total < b.total ? a : b));
       setWinner(winnerData);
+      if (winnerData.uid === currentUser.uid) {
+        playVictory();
+        launchVictoryConfetti();
+      } else {
+        playDefeat();
+      }
       await updatePlayerStats(winnerData.uid, loserData.uid, {
         winner: winnerData.total,
         loser: loserData.total,
@@ -123,8 +133,12 @@ const Game = () => {
         return;
       }
       setGame(gameData);
-      if (gameData.rollsLeft < 3) setCurrentScores(calculateScores(gameData.dice));
-      else setCurrentScores({});
+      const scores = gameData.rollsLeft < 3 ? calculateScores(gameData.dice) : {};
+      setCurrentScores(scores);
+      if (scores.yahtzee === 50) {
+        playYahtzee();
+        launchYahtzeeConfetti();
+      }
       if (gameData.status === "playing") checkGameOver(gameData);
     });
     return unsubscribe;
@@ -144,13 +158,27 @@ const Game = () => {
   const players = orderedPlayers.map(uid => [uid, game.players[uid]]).filter(([, p]) => p);
   const { upperTotal, bonus } = isTriple ? { upperTotal: 0, bonus: 0 } : calculateUpperBonus(myScores);
 
-  const handleRoll = async () => {
-    if (!isMyTurn || game.rollsLeft === 0) return;
-    setRolling(true);
-    setTimeout(() => setRolling(false), 500);
-    const newDice = rollDice(game.dice, game.kept);
-    await updateDice(gameId, newDice, game.kept, game.rollsLeft - 1);
-  };
+ const handleRoll = async () => {
+  if (!isMyTurn || game.rollsLeft === 0) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(300, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch (_e) { /* ignore audio errors */ }
+  setRolling(true);
+  setTimeout(() => setRolling(false), 500);
+  const newDice = rollDice(game.dice, game.kept);
+  await updateDice(gameId, newDice, game.kept, game.rollsLeft - 1);
+};
 
   const toggleKeep = async (i) => {
     if (!isMyTurn || game.rollsLeft === 3) return;
@@ -265,7 +293,7 @@ const Game = () => {
   return (
     <div style={{
       height: "100vh", display: "flex", flexDirection: "column",
-      background: "linear-gradient(135deg, #0f0c29, #302b63, #24243e)",
+      background: THEMES[getTheme()]?.background || "linear-gradient(135deg, #0f0c29, #302b63, #24243e)",
       overflow: "hidden",
     }}>
       {newBadges.length > 0 && <BadgeNotification badges={newBadges} onClose={() => setNewBadges([])} />}

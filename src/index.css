@@ -8,7 +8,8 @@
 
 body {
   font-family: 'Nunito', sans-serif;
-  background: var(--background, linear-gradient(135deg, #0f0c29, #302b63, #24243e));  min-height: 100vh;
+  background: var(--background, linear-gradient(135deg, #0f0c29, #302b63, #24243e));
+  min-height: 100vh;
   color: white;
 }
 
@@ -94,4 +95,13 @@ input:focus {
 .row-zero {
   border-left: 3px solid transparent !important;
   opacity: 0.6;
+}
+@keyframes scoreFlash {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.05); background: rgba(46,213,115,0.3); }
+  100% { transform: scale(1); }
+}
+
+.row-scored {
+  animation: scoreFlash 0.4s ease;
 }
