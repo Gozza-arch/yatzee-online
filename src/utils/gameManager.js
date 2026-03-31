@@ -74,9 +74,17 @@ export const saveScore = async (gameId, playerUid, category, score, players) => 
   const playerIds = Object.keys(players);
   const nextPlayer = playerIds.find((id) => id !== playerUid) || playerUid;
 
-  await updateDoc(gameRef, {
-    [`players.${playerUid}.scores.${category}`]: score,
-    currentTurn: nextPlayer,
+  const myScores = { ...(players[playerUid]?.scores || {}), [category]: score };
+const myComplete = Object.keys(myScores).length === 13;
+const otherPlayerUid = nextPlayer;
+const otherScores = players[otherPlayerUid]?.scores || {};
+const otherComplete = Object.keys(otherScores).length === 13;
+const gameComplete = myComplete && otherComplete;
+
+await updateDoc(gameRef, {
+  [`players.${playerUid}.scores.${category}`]: score,
+  currentTurn: myComplete && !otherComplete ? otherPlayerUid : nextPlayer,
+  status: gameComplete ? "finished" : "playing",
     dice: [1, 1, 1, 1, 1],
     kept: [false, false, false, false, false],
     rollsLeft: 3,
@@ -109,13 +117,23 @@ export const saveTripleScore = async (gameId, playerUid, category, score, grid, 
   const updatedGrid = { ...currentGrids[grid], [category]: score };
 
   const totalCategories = 13;
-  const allComplete = ["grid1", "grid2", "grid3"].every(g =>
-    Object.keys(g === grid ? updatedGrid : currentGrids[g] || {}).length === totalCategories
-  );
+  const myAllComplete = ["grid1", "grid2", "grid3"].every(g =>
+  Object.keys(g === grid ? updatedGrid : currentGrids[g] || {}).length === totalCategories
+);
 
-  await updateDoc(gameRef, {
-    [`players.${playerUid}.scores.${grid}.${category}`]: score,
-    currentTurn: allComplete ? playerUid : nextPlayer,
+// Vérifier si l'adversaire a aussi tout rempli
+const otherPlayerUid = nextPlayer;
+const otherGrids = players[otherPlayerUid]?.scores || {};
+const otherAllComplete = ["grid1", "grid2", "grid3"].every(g =>
+  Object.keys(otherGrids[g] || {}).length === totalCategories
+);
+
+const gameComplete = myAllComplete && otherAllComplete;
+
+await updateDoc(gameRef, {
+  [`players.${playerUid}.scores.${grid}.${category}`]: score,
+  currentTurn: myAllComplete && !otherAllComplete ? otherPlayerUid : nextPlayer,
+  status: gameComplete ? "finished" : "playing",
     dice: [1, 1, 1, 1, 1],
     kept: [false, false, false, false, false],
     rollsLeft: 3,
