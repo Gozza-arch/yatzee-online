@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { rollDice, calculateScores, CATEGORY_NAMES, UPPER_CATEGORIES, LOWER_CATEGORIES, calculateUpperBonus, calculateTotalScore } from "../utils/yahtzee";
-import { listenToGame, updateDice, saveScore, saveTripleScore, updatePlayerStats, leaveGame } from "../utils/gameManager";
+import { listenToGame, updateDice, saveScore, saveTripleScore, leaveGame } from "../utils/gameManager";
 import { checkAndAwardBadges } from "../utils/badges";
 import BadgeNotification from "../components/BadgeNotification";
 import { motion, AnimatePresence } from "framer-motion";
+import { updatePlayerStats } from "../utils/ranking";
 
 const TOTAL_CATEGORIES = Object.keys(CATEGORY_NAMES).length;
 const GRIDS = ["grid1", "grid2", "grid3"];
@@ -74,6 +75,7 @@ const Game = () => {
   const [rolling, setRolling] = useState(false);
   const [playerOrder, setPlayerOrder] = useState(null);
   const [showLobbyConfirm, setShowLobbyConfirm] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const checkGameOver = useCallback(async (gameData) => {
     const players = Object.entries(gameData.players);
@@ -99,7 +101,10 @@ const Game = () => {
       const winnerData = scores.reduce((a, b) => (a.total > b.total ? a : b));
       const loserData = scores.reduce((a, b) => (a.total < b.total ? a : b));
       setWinner(winnerData);
-      await updatePlayerStats(winnerData.uid, loserData.uid);
+      await updatePlayerStats(winnerData.uid, loserData.uid, {
+        winner: winnerData.total,
+        loser: loserData.total,
+      }, gameData.mode);
       const myScores = gameData.players[currentUser.uid]?.scores || {};
       const isWinner = winnerData.uid === currentUser.uid;
       const victories = (playerProfile?.victories || 0) + (isWinner ? 1 : 0);
@@ -298,6 +303,97 @@ const Game = () => {
         </div>
       )}
 
+      {/* PANNEAU HISTORIQUE */}
+<AnimatePresence>
+  {showHistory && (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={() => setShowHistory(false)}
+        style={{
+          position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.5)",
+          zIndex: 999,
+        }}
+      />
+      <motion.div
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 200 }}
+        style={{
+          position: "fixed", right: 0, top: 0, bottom: 0,
+          width: "360px", background: "linear-gradient(135deg, #1a1a3e, #2a2a5e)",
+          borderLeft: "1px solid rgba(255,255,255,0.1)",
+          zIndex: 1000, display: "flex", flexDirection: "column",
+          padding: "20px",
+          overflowY: "auto",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 800 }}>📜 Historique</h2>
+          <button
+            onClick={() => setShowHistory(false)}
+            style={{ background: "rgba(255,255,255,0.1)", color: "white", padding: "6px 12px", fontSize: "16px" }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {(!game.history || game.history.length === 0) ? (
+          <p style={{ color: "rgba(255,255,255,0.4)", textAlign: "center", marginTop: "40px" }}>
+            Aucun coup joué pour l'instant...
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {[...game.history].reverse().map((entry, i) => (
+              <div key={i} style={{
+                background: "rgba(255,255,255,0.05)",
+                borderRadius: "12px", padding: "12px 16px",
+                borderLeft: `3px solid ${entry.playerUid === currentUser.uid ? "#7c6af7" : "#2ed573"}`,
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                  <span style={{ fontWeight: 800, fontSize: "14px", color: entry.playerUid === currentUser.uid ? "#a89af7" : "#2ed573" }}>
+                    {entry.pseudo}
+                  </span>
+                  {entry.grid && (
+                    <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>
+                      Grille x{GRID_MULTIPLIERS[entry.grid]}
+                    </span>
+                  )}
+                </div>
+                {entry.dice && entry.dice.length > 0 && (
+                  <div style={{ display: "flex", gap: "4px", marginBottom: "6px" }}>
+                    {entry.dice.map((d, di) => (
+                      <div key={di} style={{
+                        width: "24px", height: "24px", background: "white", borderRadius: "4px",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: "13px", fontWeight: 800, color: "#1a1a2e",
+                      }}>
+                        {d}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)" }}>
+                    {CATEGORY_NAMES[entry.category]?.label || entry.category}
+                  </span>
+                  <span style={{ fontWeight: 900, fontSize: "16px", color: "#ffd700" }}>
+                    +{entry.score} pts
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
+    </>
+  )}
+</AnimatePresence>
+
       {/* BARRE DU HAUT */}
       <div style={{
         background: "rgba(0,0,0,0.4)",
@@ -306,7 +402,7 @@ const Game = () => {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         flexShrink: 0, gap: "16px",
       }}>
-        <div style={{ display: "flex", gap: "12px", flexShrink: 0 }}>
+<div style={{ display: "flex", gap: "12px", flexShrink: 0, alignItems: "center" }}>
           {players.map(([uid, player]) => (
             <div key={uid} style={{
               padding: "10px 22px", borderRadius: "12px",
@@ -326,6 +422,12 @@ const Game = () => {
               </div>
             </div>
           ))}
+          <button
+            onClick={() => setShowHistory(true)}
+            style={{ padding: "10px 14px", background: "rgba(255,255,255,0.08)", color: "white", fontSize: "14px", fontWeight: 700 }}
+          >
+            📜 Historique
+          </button>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "14px", flex: 1, justifyContent: "center" }}>
@@ -368,6 +470,7 @@ const Game = () => {
               </button>
             </div>
           )}
+
           <button onClick={() => setShowLobbyConfirm(true)} style={{ padding: "10px 20px", background: "rgba(255,255,255,0.08)", color: "white", fontSize: "15px", fontWeight: 700 }}>
             🏠 Lobby
           </button>

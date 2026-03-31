@@ -6,7 +6,7 @@ import {
   updateDoc,
   onSnapshot,
   getDoc,
-  increment,
+  arrayUnion,
 } from "firebase/firestore";
 
 export const createGame = async (playerUid, playerPseudo, mode = "classic") => {
@@ -40,14 +40,14 @@ export const joinGame = async (gameId, playerUid, playerPseudo) => {
   if (Object.keys(game.players).length >= 2) throw new Error("Partie pleine");
 
   const isTriple = game.mode === "triple";
-await updateDoc(gameRef, {
-  [`players.${playerUid}`]: {
-    pseudo: playerPseudo,
-    scores: isTriple ? { grid1: {}, grid2: {}, grid3: {} } : {},
-    ready: true
-  },
-  status: "playing",
-});
+  await updateDoc(gameRef, {
+    [`players.${playerUid}`]: {
+      pseudo: playerPseudo,
+      scores: isTriple ? { grid1: {}, grid2: {}, grid3: {} } : {},
+      ready: true
+    },
+    status: "playing",
+  });
 };
 
 // Écouter les changements d'une partie en temps réel
@@ -61,10 +61,14 @@ export const listenToGame = (gameId, callback) => {
 // Mettre à jour l'état des dés
 export const updateDice = async (gameId, dice, kept, rollsLeft) => {
   const gameRef = doc(db, "games", gameId);
-  await updateDoc(gameRef, { dice, kept, rollsLeft });
+  await updateDoc(gameRef, { 
+    dice, 
+    kept, 
+    rollsLeft,
+    lastDice: dice,
+  });
 };
 
-// Enregistrer un score et passer au joueur suivant
 export const saveScore = async (gameId, playerUid, category, score, players) => {
   const gameRef = doc(db, "games", gameId);
   const playerIds = Object.keys(players);
@@ -76,23 +80,17 @@ export const saveScore = async (gameId, playerUid, category, score, players) => 
     dice: [1, 1, 1, 1, 1],
     kept: [false, false, false, false, false],
     rollsLeft: 3,
+    history: arrayUnion({
+      playerUid,
+      pseudo: players[playerUid].pseudo,
+      category,
+      score,
+      dice: [],
+      timestamp: Date.now(),
+    }),
   });
 };
-// Mettre à jour les stats des joueurs après une partie
-export const updatePlayerStats = async (winnerUid, loserUid) => {
-  const winnerRef = doc(db, "players", winnerUid);
-  const loserRef = doc(db, "players", loserUid);
 
-  await updateDoc(winnerRef, {
-    victories: increment(1),
-    totalGames: increment(1),
-  });
-
-  await updateDoc(loserRef, {
-    defeats: increment(1),
-    totalGames: increment(1),
-  });
-};
 // Quitter une partie
 export const leaveGame = async (gameId) => {
   const gameRef = doc(db, "games", gameId);
@@ -121,5 +119,14 @@ export const saveTripleScore = async (gameId, playerUid, category, score, grid, 
     dice: [1, 1, 1, 1, 1],
     kept: [false, false, false, false, false],
     rollsLeft: 3,
+    history: arrayUnion({
+      playerUid,
+      pseudo: players[playerUid].pseudo,
+      category,
+      score,
+      grid,
+      dice: [],
+      timestamp: Date.now(),
+    }),
   });
 };
