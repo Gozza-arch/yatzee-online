@@ -12,11 +12,12 @@ const Lobby = () => {
   const [gameId, setGameId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState("classic");
 
   const handleCreate = async () => {
     setLoading(true);
     try {
-      const id = await createGame(currentUser.uid, playerProfile.pseudo);
+      const id = await createGame(currentUser.uid, playerProfile.pseudo, mode);
       navigate(`/game/${id}`);
     } catch {
       setError("Erreur lors de la création de la partie");
@@ -90,6 +91,30 @@ const Lobby = () => {
         )}
 
         {/* Créer une partie */}
+        <div style={{ marginBottom: "16px" }}>
+          <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "13px", marginBottom: "10px" }}>Mode de jeu :</p>
+          <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+            {[
+              { id: "classic", label: "🎲 Classique", desc: "1 grille" },
+              { id: "triple", label: "🎲🎲🎲 Triple", desc: "3 grilles x1 x2 x3" },
+            ].map((m) => (
+              <div
+                key={m.id}
+                onClick={() => setMode(m.id)}
+                style={{
+                  padding: "10px 20px", borderRadius: "12px", cursor: "pointer",
+                  background: mode === m.id ? "linear-gradient(135deg, rgba(124,106,247,0.5), rgba(90,79,207,0.5))" : "rgba(255,255,255,0.05)",
+                  border: mode === m.id ? "2px solid rgba(124,106,247,0.8)" : "2px solid rgba(255,255,255,0.1)",
+                  textAlign: "center", transition: "all 0.2s",
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: "15px" }}>{m.label}</div>
+                <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>{m.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <motion.button
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}

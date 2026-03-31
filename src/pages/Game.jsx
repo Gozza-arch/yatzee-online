@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { rollDice, calculateScores, CATEGORY_NAMES, UPPER_CATEGORIES, LOWER_CATEGORIES, calculateUpperBonus, calculateTotalScore } from "../utils/yahtzee";
-import { listenToGame, updateDice, saveScore, updatePlayerStats, leaveGame } from "../utils/gameManager";
+import { listenToGame, updateDice, saveScore, saveTripleScore, updatePlayerStats, leaveGame } from "../utils/gameManager";
 import { checkAndAwardBadges } from "../utils/badges";
 import BadgeNotification from "../components/BadgeNotification";
 import { motion, AnimatePresence } from "framer-motion";
 
 const TOTAL_CATEGORIES = Object.keys(CATEGORY_NAMES).length;
+const GRIDS = ["grid1", "grid2", "grid3"];
+const GRID_MULTIPLIERS = { grid1: 1, grid2: 2, grid3: 3 };
 
 const diceFaces = [
   [[false,false,false],[false,true,false],[false,false,false]],
@@ -50,6 +52,16 @@ const Die = ({ value, kept, onClick, isMyTurn, rolling }) => (
   </motion.div>
 );
 
+const calculateTripleTotalScore = (scores) => {
+  if (!scores || typeof scores !== "object") return 0;
+  return GRIDS.reduce((total, grid) => {
+    const gridScores = scores[grid] || {};
+    const { bonus } = calculateUpperBonus(gridScores);
+    const gridTotal = Object.values(gridScores).reduce((a, b) => a + b, 0) + bonus;
+    return total + gridTotal * GRID_MULTIPLIERS[grid];
+  }, 0);
+};
+
 const Game = () => {
   const { gameId } = useParams();
   const { currentUser, playerProfile } = useAuth();
@@ -65,13 +77,24 @@ const Game = () => {
 
   const checkGameOver = useCallback(async (gameData) => {
     const players = Object.entries(gameData.players);
-    const allDone = players.every(([, player]) =>
-      Object.keys(player.scores).length === TOTAL_CATEGORIES
-    );
+    const isTriple = gameData.mode === "triple";
+
+    const allDone = players.every(([, player]) => {
+      if (isTriple) {
+        return GRIDS.every(g =>
+          Object.keys(player.scores[g] || {}).length === TOTAL_CATEGORIES
+        );
+      }
+      return Object.keys(player.scores).length === TOTAL_CATEGORIES;
+    });
+
     if (allDone && !gameOver) {
       setGameOver(true);
       const scores = players.map(([uid, player]) => ({
-        uid, total: calculateTotalScore(player.scores),
+        uid,
+        total: isTriple
+          ? calculateTripleTotalScore(player.scores)
+          : calculateTotalScore(player.scores),
       }));
       const winnerData = scores.reduce((a, b) => (a.total > b.total ? a : b));
       const loserData = scores.reduce((a, b) => (a.total < b.total ? a : b));
@@ -108,12 +131,13 @@ const Game = () => {
     </div>
   );
 
+  const isTriple = game.mode === "triple";
   const isMyTurn = game.currentTurn === currentUser.uid;
   const myScores = game.players[currentUser.uid]?.scores || {};
   const activeTurnUid = game.currentTurn;
   const orderedPlayers = playerOrder || Object.keys(game.players);
   const players = orderedPlayers.map(uid => [uid, game.players[uid]]).filter(([, p]) => p);
-  const { upperTotal, bonus } = calculateUpperBonus(myScores);
+  const { upperTotal, bonus } = isTriple ? { upperTotal: 0, bonus: 0 } : calculateUpperBonus(myScores);
 
   const handleRoll = async () => {
     if (!isMyTurn || game.rollsLeft === 0) return;
@@ -130,9 +154,16 @@ const Game = () => {
     await updateDice(gameId, game.dice, newKept, game.rollsLeft);
   };
 
-  const selectCategory = async (category) => {
-    if (!isMyTurn || myScores[category] !== undefined || game.rollsLeft === 3) return;
-    await saveScore(gameId, currentUser.uid, category, currentScores[category], game.players);
+  const selectCategory = async (category, grid = null) => {
+    if (!isMyTurn || game.rollsLeft === 3) return;
+    if (isTriple) {
+      const gridScores = myScores[grid] || {};
+      if (gridScores[category] !== undefined) return;
+      await saveTripleScore(gameId, currentUser.uid, category, currentScores[category], grid, game.players);
+    } else {
+      if (myScores[category] !== undefined) return;
+      await saveScore(gameId, currentUser.uid, category, currentScores[category], game.players);
+    }
     setCurrentScores({});
   };
 
@@ -141,18 +172,30 @@ const Game = () => {
     navigate("/");
   };
 
-  const renderCell = (uid, player, key) => {
+  const getPlayerTotal = (player) => {
+    if (isTriple) return calculateTripleTotalScore(player.scores);
+    return calculateTotalScore(player.scores);
+  };
+
+  const getRowClass = (key, grid = null) => {
+    const scores = isTriple ? (myScores[grid] || {}) : myScores;
+    const scored = scores[key] !== undefined;
+    const isClickable = isMyTurn && !scored && game.rollsLeft < 3;
+    if (!isClickable) return "";
+    return currentScores[key] > 0 ? "row-scorable" : "row-zero";
+  };
+
+  // Rendu cellule mode classique
+  const renderClassicCell = (uid, player, key) => {
     const pScores = player.scores || {};
     const pScored = pScores[key] !== undefined;
     const isActivePlayer = uid === activeTurnUid;
     const preview = isActivePlayer && game.rollsLeft < 3 ? currentScores[key] : undefined;
     return (
       <td key={uid} style={{
-        textAlign: "center",
-        padding: "10px 20px",
+        textAlign: "center", padding: "10px 20px",
         borderBottom: "1px solid rgba(255,255,255,0.05)",
-        fontWeight: 800,
-        fontSize: "16px",
+        fontWeight: 800, fontSize: "16px",
         color: pScored ? "#2ed573" : preview !== undefined ? "#ffd700" : "rgba(255,255,255,0.2)",
       }}>
         {pScored ? pScores[key] : preview !== undefined ? `+${preview}` : "-"}
@@ -160,12 +203,59 @@ const Game = () => {
     );
   };
 
-  const getRowClass = (key) => {
-    const myScored = myScores[key] !== undefined;
-    const isClickable = isMyTurn && !myScored && game.rollsLeft < 3;
-    if (!isClickable) return "";
-    return currentScores[key] > 0 ? "row-scorable" : "row-zero";
+  // Rendu cellule mode triple
+  const renderTripleCell = (uid, player, key, grid) => {
+    const gridScores = (player.scores || {})[grid] || {};
+    const pScored = gridScores[key] !== undefined;
+    const isActivePlayer = uid === activeTurnUid;
+    const isMe = uid === currentUser.uid;
+    const preview = isActivePlayer && game.rollsLeft < 3 ? currentScores[key] : undefined;
+    const multiplier = GRID_MULTIPLIERS[grid];
+    const canClick = isMe && isMyTurn && !pScored && game.rollsLeft < 3;
+
+    return (
+      <td
+        key={`${uid}-${grid}`}
+        onClick={() => canClick && selectCategory(key, grid)}
+        style={{
+          textAlign: "center", padding: "8px 12px",
+          borderBottom: "1px solid rgba(255,255,255,0.05)",
+          borderLeft: grid === "grid1" ? "2px solid rgba(255,255,255,0.1)" : "none",
+          fontWeight: 800, fontSize: "15px",
+          cursor: canClick ? "pointer" : "default",
+          color: pScored ? "#2ed573" : preview !== undefined ? "#ffd700" : "rgba(255,255,255,0.2)",
+          background: canClick && preview !== undefined && preview > 0
+            ? "rgba(46,213,115,0.06)" : "transparent",
+        }}
+      >
+        {pScored
+          ? `${pScored ? gridScores[key] * multiplier : 0}`
+          : preview !== undefined ? `+${preview * multiplier}` : "-"}
+      </td>
+    );
   };
+
+  const renderBonusTripleCell = (uid, player, grid) => {
+  const gridScores = (player.scores || {})[grid] || {};
+  const upperTotal = UPPER_CATEGORIES.reduce((sum, cat) => sum + (gridScores[cat] || 0), 0);
+  const hasBonus = upperTotal >= 63;
+  const multiplier = GRID_MULTIPLIERS[grid];
+  const missing = (63 - upperTotal) * multiplier;
+
+  return (
+    <td key={`${uid}-${grid}-bonus`} style={{
+      textAlign: "center", padding: "8px 12px",
+      borderBottom: "1px solid rgba(255,255,255,0.1)",
+      borderTop: "1px solid rgba(255,255,255,0.1)",
+      borderLeft: grid === "grid1" ? "2px solid rgba(255,255,255,0.1)" : "none",
+      fontWeight: 800,
+      color: hasBonus ? "#2ed573" : "rgba(255,255,255,0.4)",
+      fontSize: "13px",
+    }}>
+      {hasBonus ? `+${35 * multiplier}` : `(-${missing})`}
+    </td>
+  );
+};
 
   return (
     <div style={{
@@ -179,8 +269,7 @@ const Game = () => {
       {showLobbyConfirm && (
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
         }}>
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
@@ -198,16 +287,10 @@ const Game = () => {
               La partie sera abandonnée si tu quittes maintenant.
             </p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-              <button
-                onClick={() => setShowLobbyConfirm(false)}
-                style={{ padding: "10px 24px", background: "rgba(255,255,255,0.1)", color: "white", fontSize: "15px" }}
-              >
+              <button onClick={() => setShowLobbyConfirm(false)} style={{ padding: "10px 24px", background: "rgba(255,255,255,0.1)", color: "white", fontSize: "15px" }}>
                 Annuler
               </button>
-              <button
-                onClick={handleLobby}
-                style={{ padding: "10px 24px", background: "linear-gradient(135deg, #c0392b, #e74c3c)", color: "white", fontSize: "15px" }}
-              >
+              <button onClick={handleLobby} style={{ padding: "10px 24px", background: "linear-gradient(135deg, #c0392b, #e74c3c)", color: "white", fontSize: "15px" }}>
                 Quitter
               </button>
             </div>
@@ -223,7 +306,6 @@ const Game = () => {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         flexShrink: 0, gap: "16px",
       }}>
-        {/* Infos joueurs */}
         <div style={{ display: "flex", gap: "12px", flexShrink: 0 }}>
           {players.map(([uid, player]) => (
             <div key={uid} style={{
@@ -231,45 +313,38 @@ const Game = () => {
               background: uid === game.currentTurn
                 ? "linear-gradient(135deg, rgba(124,106,247,0.5), rgba(90,79,207,0.5))"
                 : "rgba(255,255,255,0.07)",
-              border: uid === game.currentTurn
-                ? "2px solid rgba(124,106,247,0.8)"
-                : "2px solid rgba(255,255,255,0.1)",
+              border: uid === game.currentTurn ? "2px solid rgba(124,106,247,0.8)" : "2px solid rgba(255,255,255,0.1)",
               textAlign: "center",
               boxShadow: uid === game.currentTurn ? "0 0 20px rgba(124,106,247,0.4)" : "none",
-              transition: "all 0.3s ease",
-              minWidth: "110px",
+              transition: "all 0.3s ease", minWidth: "110px",
             }}>
               <div style={{ fontSize: "15px", fontWeight: 800 }}>
                 {uid === game.currentTurn ? "🎯 " : ""}{player.pseudo}
               </div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: uid === game.currentTurn ? "#a89af7" : "white" }}>
-                {calculateTotalScore(player.scores)} pts
+                {getPlayerTotal(player)} pts
               </div>
             </div>
           ))}
         </div>
 
-        {/* Dés + bouton */}
         <div style={{ display: "flex", alignItems: "center", gap: "14px", flex: 1, justifyContent: "center" }}>
           <div style={{ position: "relative" }}>
-  <div style={{ display: "flex", gap: "10px", filter: "none", transition: "filter 0.3s" }}>
-    {game.dice.map((die, i) => (
-      <Die key={i} value={die} kept={game.kept[i]} onClick={() => toggleKeep(i)} isMyTurn={isMyTurn} rolling={rolling} />
-    ))}
-  </div>
-  {!isMyTurn && (
-  <div style={{
-    position: "absolute", inset: 0,
-    background: "rgba(180, 30, 30, 0.25)",
-    borderRadius: "10px",
-    pointerEvents: "none",
-  }} />
-)}
-      
-    </div>
+            <div style={{ display: "flex", gap: "10px" }}>
+              {game.dice.map((die, i) => (
+                <Die key={i} value={die} kept={game.kept[i]} onClick={() => toggleKeep(i)} isMyTurn={isMyTurn} rolling={rolling} />
+              ))}
+            </div>
+            {!isMyTurn && (
+              <div style={{
+                position: "absolute", inset: 0,
+                background: "rgba(180, 30, 30, 0.25)",
+                borderRadius: "10px", pointerEvents: "none",
+              }} />
+            )}
+          </div>
           <motion.button
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.96 }}
+            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
             onClick={handleRoll}
             disabled={!isMyTurn || game.rollsLeft === 0}
             style={{
@@ -284,23 +359,16 @@ const Game = () => {
           </motion.button>
         </div>
 
-        {/* Droite */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px", flexShrink: 0 }}>
           {game.status === "waiting" && (
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>⏳ En attente...</span>
-              <button
-                onClick={() => navigator.clipboard.writeText(gameId)}
-                style={{ padding: "6px 14px", background: "rgba(124,106,247,0.5)", color: "white", fontSize: "13px" }}
-              >
+              <button onClick={() => navigator.clipboard.writeText(gameId)} style={{ padding: "6px 14px", background: "rgba(124,106,247,0.5)", color: "white", fontSize: "13px" }}>
                 📋 Copier l'ID
               </button>
             </div>
           )}
-          <button
-            onClick={() => setShowLobbyConfirm(true)}
-            style={{ padding: "10px 20px", background: "rgba(255,255,255,0.08)", color: "white", fontSize: "15px", fontWeight: 700 }}
-          >
+          <button onClick={() => setShowLobbyConfirm(true)} style={{ padding: "10px 20px", background: "rgba(255,255,255,0.08)", color: "white", fontSize: "15px", fontWeight: 700 }}>
             🏠 Lobby
           </button>
         </div>
@@ -310,45 +378,35 @@ const Game = () => {
       {game.status === "playing" && (
         <AnimatePresence>
           {isMyTurn ? (
-            <motion.div
-              key="myturn"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
+            <motion.div key="myturn" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
               style={{
                 textAlign: "center", padding: "12px",
                 background: "linear-gradient(135deg, rgba(124,106,247,0.4), rgba(90,79,207,0.4))",
                 borderBottom: "2px solid rgba(124,106,247,0.6)",
-                fontSize: "17px", fontWeight: 800, color: "#fff",
-                flexShrink: 0, letterSpacing: "0.5px",
+                fontSize: "17px", fontWeight: 800, color: "#fff", flexShrink: 0,
               }}
             >
               {game.rollsLeft > 0
                 ? `🎯 C'EST TON TOUR ! Clique sur les dés à garder puis relance — ${game.rollsLeft} lancer(s) restant(s)`
-                : "✅ PLUS DE LANCERS — Choisis une catégorie dans le tableau ci-dessous"}
+                : isTriple
+                  ? "✅ PLUS DE LANCERS — Clique sur une cellule dans la grille x1, x2 ou x3"
+                  : "✅ PLUS DE LANCERS — Choisis une catégorie dans le tableau ci-dessous"}
             </motion.div>
           ) : (
-            <motion.div
-              key="theirturn"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            <motion.div key="theirturn" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               style={{
                 textAlign: "center", padding: "14px",
                 background: "rgba(255,255,255,0.04)",
                 borderBottom: "1px solid rgba(255,255,255,0.08)",
-                fontSize: "14px", color: "rgba(255,255,255,0.5)",
                 flexShrink: 0,
               }}
             >
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
-  <span style={{ fontSize: "18px", fontWeight: 900 }}>
-    ⏳ C'est au tour de {players.find(([uid]) => uid === game.currentTurn)?.[1]?.pseudo || "l'adversaire"}
-  </span>
-  <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.4)" }}>
-    Patiente pendant qu'il joue...
-  </span>
-</div>
+                <span style={{ fontSize: "18px", fontWeight: 900 }}>
+                  ⏳ C'est au tour de {players.find(([uid]) => uid === game.currentTurn)?.[1]?.pseudo || "l'adversaire"}
+                </span>
+                <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.4)" }}>Patiente pendant qu'il joue...</span>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -357,9 +415,7 @@ const Game = () => {
       {/* Fin de partie */}
       <AnimatePresence>
         {gameOver && winner && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
             style={{
               textAlign: "center", padding: "14px",
               background: winner.uid === currentUser.uid ? "rgba(46,213,115,0.2)" : "rgba(255,71,87,0.2)",
@@ -381,97 +437,149 @@ const Game = () => {
       <div style={{ flex: 1, overflow: "auto", margin: "8px" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           <colgroup>
-            <col style={{ width: "40%" }} />
-            {players.map(([uid]) => (
-              <col key={uid} style={{ width: `${60 / players.length}%` }} />
-            ))}
+            <col style={{ width: isTriple ? "25%" : "40%" }} />
+            {players.map(([uid]) =>
+              isTriple
+                ? GRIDS.map(g => <col key={`${uid}-${g}`} style={{ width: `${75 / (players.length * 3)}%` }} />)
+                : <col key={uid} style={{ width: `${60 / players.length}%` }} />
+            )}
           </colgroup>
           <thead>
+            {/* Ligne noms joueurs */}
             <tr>
               <th style={{ padding: "10px 20px", background: "rgba(255,255,255,0.08)", textAlign: "left", fontSize: "13px", color: "rgba(255,255,255,0.5)", fontWeight: 700, letterSpacing: "1px" }}>
                 CATÉGORIE
               </th>
-              {players.map(([uid, player]) => (
-                <th key={uid} style={{
-                  padding: "12px 20px", textAlign: "center", fontSize: "17px", fontWeight: 800,
-                  background: uid === game.currentTurn ? "rgba(124,106,247,0.25)" : "rgba(255,255,255,0.05)",
-                  color: uid === game.currentTurn ? "#a89af7" : "rgba(255,255,255,0.8)",
-                  borderBottom: uid === game.currentTurn ? "2px solid rgba(124,106,247,0.5)" : "2px solid transparent",
-                }}>
-                  {player.pseudo}
-                </th>
-              ))}
+              {players.map(([uid, player]) =>
+                isTriple ? (
+                  <th key={uid} colSpan={3} style={{
+                    padding: "10px 20px", textAlign: "center", fontSize: "16px", fontWeight: 800,
+                    background: uid === game.currentTurn ? "rgba(124,106,247,0.25)" : "rgba(255,255,255,0.05)",
+                    color: uid === game.currentTurn ? "#a89af7" : "rgba(255,255,255,0.8)",
+                    borderBottom: uid === game.currentTurn ? "2px solid rgba(124,106,247,0.5)" : "2px solid transparent",
+                    borderLeft: "2px solid rgba(255,255,255,0.1)",
+                  }}>
+                    {player.pseudo}
+                  </th>
+                ) : (
+                  <th key={uid} style={{
+                    padding: "12px 20px", textAlign: "center", fontSize: "17px", fontWeight: 800,
+                    background: uid === game.currentTurn ? "rgba(124,106,247,0.25)" : "rgba(255,255,255,0.05)",
+                    color: uid === game.currentTurn ? "#a89af7" : "rgba(255,255,255,0.8)",
+                    borderBottom: uid === game.currentTurn ? "2px solid rgba(124,106,247,0.5)" : "2px solid transparent",
+                  }}>
+                    {player.pseudo}
+                  </th>
+                )
+              )}
             </tr>
+            {/* Ligne multiplicateurs en mode triple */}
+            {isTriple && (
+              <tr>
+                <th style={{ padding: "4px 20px", background: "rgba(255,255,255,0.05)", fontSize: "11px", color: "rgba(255,255,255,0.3)" }} />
+                {players.map(([uid]) =>
+                  GRIDS.map(g => (
+                    <th key={`${uid}-${g}-header`} style={{
+                      padding: "4px 8px", textAlign: "center", fontSize: "12px", fontWeight: 800,
+                      background: "rgba(255,255,255,0.05)",
+                      color: g === "grid1" ? "rgba(255,255,255,0.6)" : g === "grid2" ? "#ffd700" : "#ff6b6b",
+                      borderLeft: g === "grid1" ? "2px solid rgba(255,255,255,0.1)" : "none",
+                    }}>
+                      x{GRID_MULTIPLIERS[g]}
+                    </th>
+                  ))
+                )}
+              </tr>
+            )}
           </thead>
           <tbody>
             <tr>
-              <td colSpan={players.length + 1} style={{ padding: "5px 20px", background: "rgba(124,106,247,0.15)", fontSize: "12px", fontWeight: 800, letterSpacing: "1px", color: "#a89af7", textTransform: "uppercase" }}>
+              <td colSpan={isTriple ? players.length * 3 + 1 : players.length + 1} style={{ padding: "5px 20px", background: "rgba(124,106,247,0.15)", fontSize: "12px", fontWeight: 800, letterSpacing: "1px", color: "#a89af7", textTransform: "uppercase" }}>
                 🎯 Section haute
               </td>
             </tr>
 
             {UPPER_CATEGORIES.map((key) => {
               const cat = CATEGORY_NAMES[key];
-              const myScored = myScores[key] !== undefined;
-              const isClickable = isMyTurn && !myScored && game.rollsLeft < 3;
               return (
-                <tr key={key} onClick={() => selectCategory(key)} className={getRowClass(key)}
-                  style={{ cursor: isClickable ? "pointer" : "default", transition: "background 0.15s" }}>
+                <tr key={key}
+                  onClick={() => !isTriple && selectCategory(key)}
+                  className={!isTriple ? getRowClass(key) : ""}
+                  style={{ cursor: !isTriple && isMyTurn && myScores[key] === undefined ? "pointer" : "default", transition: "background 0.15s" }}
+                >
                   <td style={{ padding: "10px 20px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                     <div style={{ fontSize: "15px", fontWeight: 700 }}>{cat.label}</div>
                     <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.35)" }}>{cat.desc}</div>
                   </td>
-                  {players.map(([uid, player]) => renderCell(uid, player, key))}
+                  {isTriple
+                    ? players.map(([uid, player]) => GRIDS.map(g => renderTripleCell(uid, player, key, g)))
+                    : players.map(([uid, player]) => renderClassicCell(uid, player, key))
+                  }
                 </tr>
               );
             })}
 
-            <tr style={{ background: bonus > 0 ? "rgba(46,213,115,0.1)" : "rgba(255,255,255,0.02)" }}>
+            {/* Bonus */}
+            <tr style={{ background: "rgba(255,255,255,0.02)" }}>
               <td style={{ padding: "10px 20px", borderBottom: "1px solid rgba(255,255,255,0.1)", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
                 <div style={{ fontSize: "15px", fontWeight: 700 }}>🎁 Bonus</div>
-                <div style={{ fontSize: "12px", color: bonus > 0 ? "#2ed573" : "rgba(255,255,255,0.35)" }}>
-                  35 pts si ≥ 63 — {upperTotal}/63 {bonus === 0 && `(encore ${63 - upperTotal} pts)`}
+                <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.35)" }}>
+                  {isTriple ? "35 pts si ≥ 63 (par grille)" : `35 pts si ≥ 63 — ${upperTotal}/63 ${bonus === 0 ? `(encore ${63 - upperTotal} pts)` : ""}`}
                 </div>
               </td>
-              {players.map(([uid, player]) => {
-                const { bonus: pBonus } = calculateUpperBonus(player.scores || {});
-                return (
-                  <td key={uid} style={{ textAlign: "center", fontWeight: 800, fontSize: "16px", color: pBonus > 0 ? "#2ed573" : "rgba(255,255,255,0.2)", borderBottom: "1px solid rgba(255,255,255,0.1)", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-                    {pBonus > 0 ? "+35" : "-"}
-                  </td>
-                );
-              })}
+              {isTriple
+                ? players.map(([uid, player]) => GRIDS.map(g => renderBonusTripleCell(uid, player, g)))
+                : players.map(([uid, player]) => {
+                    const { bonus: pBonus } = calculateUpperBonus(player.scores || {});
+                    return (
+                      <td key={uid} style={{ textAlign: "center", fontWeight: 800, fontSize: "16px", color: pBonus > 0 ? "#2ed573" : "rgba(255,255,255,0.2)", borderBottom: "1px solid rgba(255,255,255,0.1)", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+                        {pBonus > 0 ? "+35" : "-"}
+                      </td>
+                    );
+                  })
+              }
             </tr>
 
             <tr>
-              <td colSpan={players.length + 1} style={{ padding: "5px 20px", background: "rgba(124,106,247,0.15)", fontSize: "12px", fontWeight: 800, letterSpacing: "1px", color: "#a89af7", textTransform: "uppercase" }}>
+              <td colSpan={isTriple ? players.length * 3 + 1 : players.length + 1} style={{ padding: "5px 20px", background: "rgba(124,106,247,0.15)", fontSize: "12px", fontWeight: 800, letterSpacing: "1px", color: "#a89af7", textTransform: "uppercase" }}>
                 🎲 Section basse
               </td>
             </tr>
 
             {LOWER_CATEGORIES.map((key) => {
               const cat = CATEGORY_NAMES[key];
-              const myScored = myScores[key] !== undefined;
-              const isClickable = isMyTurn && !myScored && game.rollsLeft < 3;
               return (
-                <tr key={key} onClick={() => selectCategory(key)} className={getRowClass(key)}
-                  style={{ cursor: isClickable ? "pointer" : "default", transition: "background 0.15s" }}>
+                <tr key={key}
+                  onClick={() => !isTriple && selectCategory(key)}
+                  className={!isTriple ? getRowClass(key) : ""}
+                  style={{ cursor: !isTriple && isMyTurn && myScores[key] === undefined ? "pointer" : "default", transition: "background 0.15s" }}
+                >
                   <td style={{ padding: "10px 20px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                     <div style={{ fontSize: "15px", fontWeight: 700 }}>{cat.label}</div>
                     <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.35)" }}>{cat.desc}</div>
                   </td>
-                  {players.map(([uid, player]) => renderCell(uid, player, key))}
+                  {isTriple
+                    ? players.map(([uid, player]) => GRIDS.map(g => renderTripleCell(uid, player, key, g)))
+                    : players.map(([uid, player]) => renderClassicCell(uid, player, key))
+                  }
                 </tr>
               );
             })}
 
             <tr style={{ background: "rgba(124,106,247,0.2)" }}>
               <td style={{ padding: "12px 20px", fontWeight: 800, fontSize: "16px" }}>🏆 Score total</td>
-              {players.map(([uid, player]) => (
-                <td key={uid} style={{ textAlign: "center", fontWeight: 900, fontSize: "22px", color: "#a89af7" }}>
-                  {calculateTotalScore(player.scores || {})}
-                </td>
-              ))}
+              {isTriple
+                ? players.map(([uid, player]) => (
+                    <td key={uid} colSpan={3} style={{ textAlign: "center", fontWeight: 900, fontSize: "22px", color: "#a89af7", borderLeft: "2px solid rgba(255,255,255,0.1)" }}>
+                      {calculateTripleTotalScore(player.scores || {})}
+                    </td>
+                  ))
+                : players.map(([uid, player]) => (
+                    <td key={uid} style={{ textAlign: "center", fontWeight: 900, fontSize: "22px", color: "#a89af7" }}>
+                      {calculateTotalScore(player.scores || {})}
+                    </td>
+                  ))
+              }
             </tr>
           </tbody>
         </table>
