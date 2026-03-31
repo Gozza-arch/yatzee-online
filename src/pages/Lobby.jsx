@@ -166,6 +166,12 @@ const Lobby = () => {
             🏆 Classement
           </button>
           <button
+  onClick={() => navigate("/profile")}
+  style={{ flex: 1, padding: "12px", background: "rgba(255,255,255,0.08)", color: "white", fontSize: "15px" }}
+>
+  🎨 Mon profil
+</button>
+          <button
             onClick={handleLogout}
             style={{
               flex: 1, padding: "12px",

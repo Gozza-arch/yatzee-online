@@ -5,6 +5,7 @@ import Register from "./pages/Register";
 import Game from "./pages/Game";
 import Lobby from "./pages/Lobby";
 import Leaderboard from "./pages/Leaderboard";
+import Profile from "./pages/Profile";
 
 function App() {
   return (
@@ -36,6 +37,14 @@ function App() {
             </PrivateRoute>
           }
         />
+        <Route
+  path="/profile"
+  element={
+    <PrivateRoute>
+      <Profile />
+    </PrivateRoute>
+  }
+/>
       </Routes>
     </BrowserRouter>
   );
