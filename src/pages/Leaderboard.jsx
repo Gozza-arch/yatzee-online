@@ -96,7 +96,7 @@ const Leaderboard = () => {
                 {medals[index] || `#${index + 1}`}
               </span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "16px", fontWeight: 800 }}>{player.pseudo}</div>
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>{player.avatar || "🎲"} {player.pseudo}</div>
                 <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>{getSecondary(player)}</div>
               </div>
               <div style={{ fontWeight: 900, fontSize: "18px", color: "#a89af7" }}>

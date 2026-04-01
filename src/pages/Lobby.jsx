@@ -17,7 +17,7 @@ const Lobby = () => {
   const handleCreate = async () => {
     setLoading(true);
     try {
-      const id = await createGame(currentUser.uid, playerProfile.pseudo, mode);
+      const id = await createGame(currentUser.uid, playerProfile.pseudo, mode, playerProfile.avatar || "🎲");
       navigate(`/game/${id}`);
     } catch {
       setError("Erreur lors de la création de la partie");
@@ -29,7 +29,7 @@ const Lobby = () => {
     if (!gameId.trim()) return;
     setLoading(true);
     try {
-      await joinGame(gameId.trim(), currentUser.uid, playerProfile.pseudo);
+      await joinGame(gameId.trim(), currentUser.uid, playerProfile.pseudo, playerProfile.avatar || "🎲");
       navigate(`/game/${gameId.trim()}`);
     } catch (e) {
       setError(e.message);
@@ -55,8 +55,8 @@ const Lobby = () => {
         <div style={{ fontSize: "70px", marginBottom: "10px" }}>🎲</div>
         <h1 style={{ fontSize: "42px", fontWeight: 900, marginBottom: "4px" }}>Yahtzee</h1>
         <h2 style={{ fontSize: "20px", fontWeight: 600, color: "rgba(255,255,255,0.7)", marginBottom: "8px" }}>
-          Bienvenue {playerProfile?.pseudo} !
-        </h2>
+  {playerProfile?.avatar || "🎲"} Bienvenue {playerProfile?.pseudo} !
+</h2>
         <p style={{ color: "rgba(255,255,255,0.4)", marginBottom: "20px" }}>
           {playerProfile?.victories || 0} victoires 🏆 · {playerProfile?.totalGames || 0} parties 🎮
         </p>

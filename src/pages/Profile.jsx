@@ -2,22 +2,29 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { THEMES, AVATARS, getTheme, setTheme, getAvatar, setAvatar } from "../utils/themes";
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from "../firebase";
 import { motion } from "framer-motion";
 
 const Profile = () => {
-  const { playerProfile } = useAuth();
+  const { playerProfile, currentUser } = useAuth();
   const navigate = useNavigate();
   const [selectedTheme, setSelectedTheme] = useState(getTheme());
   const [selectedAvatar, setSelectedAvatar] = useState(getAvatar());
   const [saved, setSaved] = useState(false);
 
-  const handleSave = () => {
-    setTheme(selectedTheme);
-    setAvatar(selectedAvatar);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-    window.location.reload();
-  };
+  const handleSave = async () => {
+  setTheme(selectedTheme);
+  setAvatar(selectedAvatar);
+  if (currentUser) {
+    await updateDoc(doc(db, "players", currentUser.uid), {
+      avatar: selectedAvatar,
+    });
+  }
+  setSaved(true);
+  setTimeout(() => setSaved(false), 2000);
+  window.location.reload();
+};
 
   return (
     <div style={{ minHeight: "100vh", padding: "40px 20px", maxWidth: "600px", margin: "0 auto" }}>

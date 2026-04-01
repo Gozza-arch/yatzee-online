@@ -10,17 +10,13 @@ import {
   increment,
 } from "firebase/firestore";
 
-export const createGame = async (playerUid, playerPseudo, mode = "classic") => {
+export const createGame = async (playerUid, playerPseudo, mode = "classic", playerAvatar = "🎲") => {
   const isTriple = mode === "triple";
   const gameRef = await addDoc(collection(db, "games"), {
     status: "waiting",
     mode,
     players: {
-      [playerUid]: {
-        pseudo: playerPseudo,
-        scores: isTriple ? { grid1: {}, grid2: {}, grid3: {} } : {},
-        ready: true
-      },
+      [playerUid]: { pseudo: playerPseudo, avatar: playerAvatar, scores: isTriple ? { grid1: {}, grid2: {}, grid3: {} } : {}, ready: true },
     },
     currentTurn: playerUid,
     dice: [1, 1, 1, 1, 1],
@@ -32,7 +28,7 @@ export const createGame = async (playerUid, playerPseudo, mode = "classic") => {
 };
 
 // Rejoindre une partie existante
-export const joinGame = async (gameId, playerUid, playerPseudo) => {
+export const joinGame = async (gameId, playerUid, playerPseudo, playerAvatar = "🎲") => {
   const gameRef = doc(db, "games", gameId);
   const gameSnap = await getDoc(gameRef);
 
@@ -42,11 +38,10 @@ export const joinGame = async (gameId, playerUid, playerPseudo) => {
 
   const isTriple = game.mode === "triple";
   await updateDoc(gameRef, {
-    [`players.${playerUid}`]: {
-      pseudo: playerPseudo,
-      scores: isTriple ? { grid1: {}, grid2: {}, grid3: {} } : {},
-      ready: true
-    },
+    [`players.${playerUid}.pseudo`]: playerPseudo,
+    [`players.${playerUid}.avatar`]: playerAvatar,
+    [`players.${playerUid}.scores`]: isTriple ? { grid1: {}, grid2: {}, grid3: {} } : {},
+    [`players.${playerUid}.ready`]: true,
     status: "playing",
   });
 };

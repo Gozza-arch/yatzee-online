@@ -433,8 +433,8 @@ const selectCategory = async (category, grid = null) => {
               transition: "all 0.3s ease", minWidth: "110px",
             }}>
               <div style={{ fontSize: "15px", fontWeight: 800 }}>
-                {uid === game.currentTurn ? "🎯 " : ""}{player.pseudo}
-              </div>
+  {uid === game.currentTurn ? "🎯 " : ""}{player.avatar || "🎲"} {player.pseudo}
+</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: uid === game.currentTurn ? "#a89af7" : "white" }}>
                 {getPlayerTotal(player)} pts
               </div>
@@ -611,8 +611,8 @@ const selectCategory = async (category, grid = null) => {
               minWidth: "120px",
             }}>
               <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>
-                {uid === winner.uid ? "🥇 " : "🥈 "}{player.pseudo}
-              </div>
+  {uid === winner.uid ? "🥇 " : "🥈 "}{player.avatar || "🎲"} {player.pseudo}
+</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: uid === winner.uid ? "#2ed573" : "white" }}>
                 {getPlayerTotal(player)} pts
               </div>

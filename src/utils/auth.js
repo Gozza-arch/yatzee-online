@@ -17,13 +17,13 @@ export const register = async (pseudo, password) => {
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
   const user = userCredential.user;
 
-  // Crée le profil joueur dans Firestore
   await setDoc(doc(db, "players", user.uid), {
     pseudo: pseudo,
     victories: 0,
     defeats: 0,
     totalGames: 0,
     badges: [],
+    avatar: "🎲",
     createdAt: new Date(),
   });
 
