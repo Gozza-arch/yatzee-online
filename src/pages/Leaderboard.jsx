@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getLeaderboard, getLeaderboardByPoints, getLeaderboardTriple } from "../utils/ranking";
+import { getLeaderboard, getLeaderboardByPoints, getLeaderboardTriple, getLeaderboardTriplePoints  } from "../utils/ranking";
 
 const TABS = [
   { id: "victories", label: "🏆 Victoires" },
   { id: "points", label: "⭐ Points" },
-  { id: "triple", label: "🎲🎲🎲 Triple" },
+  { id: "triple", label: "🎲🎲🎲 Triple victoires" },
+  { id: "triplePoints", label: "🎲🎲🎲 Triple points" },
 ];
 
 const Leaderboard = () => {
@@ -20,9 +21,11 @@ const Leaderboard = () => {
       let data;
       if (activeTab === "victories") data = await getLeaderboard();
       else if (activeTab === "points") data = await getLeaderboardByPoints();
+      else if (activeTab === "triplePoints") data = await getLeaderboardTriplePoints();
       else data = await getLeaderboardTriple();
       setPlayers(data);
       setLoading(false);
+      
     };
     fetchLeaderboard();
   }, [activeTab]);
@@ -32,12 +35,14 @@ const Leaderboard = () => {
   const getStatValue = (player) => {
     if (activeTab === "victories") return `${player.victories || 0} victoires`;
     if (activeTab === "points") return `${player.totalPoints || 0} pts`;
+    if (activeTab === "triplePoints") return `${player.triplePoints || 0} pts`;
     return `${player.tripleVictories || 0} victoires`;
   };
 
   const getSecondary = (player) => {
     if (activeTab === "victories") return `${player.totalGames || 0} parties`;
     if (activeTab === "points") return `${player.totalGames || 0} parties`;
+    if (activeTab === "triplePoints") return `${player.tripleGames || 0} parties Triple`;
     return `${player.tripleGames || 0} parties Triple`;
   };
 
